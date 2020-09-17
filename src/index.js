@@ -6,7 +6,7 @@ const { DateTime } = require("luxon");
 const config = require("../config/constants.json");
 const projects = require("../config/projects.json");
 
-const { getUrl, getEndpoint } = require("./utils");
+const { getUrl } = require("./utils");
 
 const options = {
   headers: {
@@ -14,10 +14,14 @@ const options = {
   },
 };
 
-function getParams() {
+/**
+ *
+ * @param {Project} project
+ */
+function buildSearchParams(project) {
   const startDate = DateTime.local().minus({ weeks: 1 }).startOf("day").toISO();
   return {
-    branch: config.GH_BRANCH_DEFAULT,
+    branch: project.branch || config.GH_BRANCH_DEFAULT,
     "start-date": startDate,
   };
 }
@@ -30,29 +34,27 @@ function getParams() {
  * @param {string}    message     e.g. 'Rate Limit Exceeded', 'Project not found', etc
  */
 function notifySlackChannels(projectId, channels, message) {
-  console.log("Send Slack notification", { projectId, channels, message });
+  console.log("Send Slack notification", { projectId, message, channels });
 }
 
 /**
  * Decide whether to send a Slack alert
  * - Is the project misconfigured?
- * - Is the nightly build failing often enough?
+ * - Do nightly build failures exceed the threshold for the period?
  *
  * @param {string} projectId
  * @param {object} projectConfig
- * @param {Response} value
+ * @param {Response} response
  */
-async function processResponses(projectId, projectConfig, value) {
+async function processResponses(projectId, projectConfig, response) {
   const { channels } = projectConfig;
-  const { message, items } = await value.json();
+  const { message, items } = await response.json();
 
   if (typeof message === "string") {
     return notifySlackChannels(projectId, channels, message);
   }
 
   const errorNum = items.filter(({ status }) => status === "failed").length;
-
-  console.log({ projectId, errorNum });
 
   if (errorNum > config.ERROR_THRESHOLD) {
     return notifySlackChannels(
@@ -65,15 +67,20 @@ async function processResponses(projectId, projectConfig, value) {
 
 /**
  * Retrieve records of build success/failure for nightly builds
- * of the the production branch for all projects listed in ../config/projects.json
+ * of the the specified branch for all projects listed in ../config/projects.json
  * over the last week
  *
- * @param {Config} config
+ * @param {ProjectMap} projects
  */
-async function getData({ projects, params }) {
+async function getProjectBuildStatuses(projects) {
   try {
     const projectIds = Object.keys(projects);
-    const requests = projectIds.map((projectId) => fetch(getUrl(projectId, params), options));
+    const requests = projectIds.map((projectId) => {
+      const project = projects[projectId];
+      const searchParams = buildSearchParams(project);
+      const projectUrl = getUrl(projectId, searchParams, project.workflow);
+      return fetch(projectUrl, options);
+    });
     const responses = await Promise.allSettled(requests);
 
     let index = 0;
@@ -92,7 +99,4 @@ async function getData({ projects, params }) {
   }
 }
 
-getData({
-  projects,
-  params: getParams(),
-});
+getProjectBuildStatuses(projects);

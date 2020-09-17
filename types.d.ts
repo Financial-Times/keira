@@ -1,16 +1,15 @@
-type Config = {
-  projects: Projects;
-  params: {
-    branch: string;
-    "start-date": string;
-  };
+type SearchParams = {
+  branch: string;
+  "start-date": string;
 };
 
 type Project = {
+  branch?: string;
+  workflow?: string;
   channels: string[];
 };
 
-type Projects = Record<string, Project>;
+type ProjectMap = Record<string, Project>;
 
 type Item = {
   status: string;
