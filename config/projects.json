@@ -1,0 +1,14 @@
+{
+  "next-consent-proxy": {
+    "channels": ["ads-tech-rota"]
+  },
+  "next-ads-api": {
+    "channels": ["ads-tech-rota"]
+  },
+  "n-ads-api": {
+    "channels": ["ads-tech-rota"]
+  },
+  "n-syndication": {
+    "channels": []
+  }
+}
