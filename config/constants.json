@@ -1,5 +1,5 @@
 {
-  "ORG": "github/Financial-Times",
   "GH_BRANCH_DEFAULT": "master",
-  "ERROR_THRESHOLD": 4
+  "ERROR_THRESHOLD": 4,
+  "SUPPORT_CHANNEL": "#keira-playground"
 }
