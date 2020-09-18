@@ -1,12 +1,12 @@
 require("dotenv").config();
 require("promise.allsettled");
 const fetch = require("node-fetch");
-const { DateTime } = require("luxon");
+const { WebClient } = require("@slack/web-api");
 
-const config = require("../config/constants.json");
+const utils = require("./utils");
 const projects = require("../config/projects.json");
 
-const { getUrl } = require("./utils");
+const slack = new WebClient(process.env.SLACK_TOKEN);
 
 const options = {
   headers: {
@@ -15,26 +15,53 @@ const options = {
 };
 
 /**
- *
- * @param {Project} project
+ * 
+ * @param {{error: string}} slackResponse 
+ * @param {string} channel 
  */
-function buildSearchParams(project) {
-  const startDate = DateTime.local().minus({ weeks: 1 }).startOf("day").toISO();
-  return {
-    branch: project.branch || config.GH_BRANCH_DEFAULT,
-    "start-date": startDate,
+function sendConfigAlert({ error }, channel) {
+  const errorMap = {
+    channel_not_found: `@Keira needs to be invited to ${channel} to work`,
+    not_in_channel: `Config issue: ${channel} doesn't exist`,
   };
+
+  if (errorMap[error]) {
+    return slack.chat.postMessage({
+      channel: "#keira-playground",
+      text: `${utils.getMessageIcon(error)} ${errorMap[error]}`,
+    });
+  }
 }
 
 /**
- * Send a Slack message to each channel that data for projectId is not being returned
+ * Send a Slack message to each channel
  *
  * @param {string}    projectId   e.g. 'n-ads-api'
  * @param {string[]}  channels    e.g. ['ads-tech-rota']
  * @param {string}    message     e.g. 'Rate Limit Exceeded', 'Project not found', etc
  */
-function notifySlackChannels(projectId, channels, message) {
-  console.log("Send Slack notification", { projectId, message, channels });
+async function notifySlackChannels(projectId, channels, message) {
+  try {
+    const notifications = [];
+    for (const channel of channels) {
+      const icon = utils.getMessageIcon(message);
+      const pipelineUrl = utils.getPipelineUrl(projectId);
+      const text = `${icon} *<${pipelineUrl}|${projectId}>*: ${message}`;
+      notifications.push(slack.chat.postMessage({ channel, text }));
+    }
+
+    // Verify that the messages were correctly sent
+    const responses = await Promise.allSettled(notifications);
+    let channelIndex = 0;
+    for (const response of responses) {
+      const channel = channels[channelIndex++];
+      if (response.status === "rejected") {
+        sendConfigAlert(response.reason.data, channel);
+      }
+    }
+  } catch (err) {
+    console.log(err);
+  }
 }
 
 /**
@@ -43,30 +70,26 @@ function notifySlackChannels(projectId, channels, message) {
  * - Do nightly build failures exceed the threshold for the period?
  *
  * @param {string} projectId
- * @param {object} projectConfig
+ * @param {Project} projectConfig
  * @param {Response} response
  */
 async function processResponses(projectId, projectConfig, response) {
   const { channels } = projectConfig;
   const { message, items } = await response.json();
 
+  // If `message` exists the repo has issues besides build failures
   if (typeof message === "string") {
     return notifySlackChannels(projectId, channels, message);
   }
 
-  const errorNum = items.filter(({ status }) => status === "failed").length;
-
-  if (errorNum > config.ERROR_THRESHOLD) {
-    return notifySlackChannels(
-      projectId,
-      channels,
-      `Threshold for build errors (${config.ERROR_THRESHOLD}) exceeded`
-    );
+  // Send an alert if too many builds are failing
+  if (utils.excessiveBuildFailures(items)) {
+    return notifySlackChannels(projectId, channels, `Threshold for build errors exceeded`);
   }
 }
 
 /**
- * Retrieve records of build success/failure for nightly builds
+ * Retrieve records of success/failure for nightly builds
  * of the the specified branch for all projects listed in ../config/projects.json
  * over the last week
  *
@@ -77,8 +100,8 @@ async function getProjectBuildStatuses(projects) {
     const projectIds = Object.keys(projects);
     const requests = projectIds.map((projectId) => {
       const project = projects[projectId];
-      const searchParams = buildSearchParams(project);
-      const projectUrl = getUrl(projectId, searchParams, project.workflow);
+      const searchParams = utils.buildSearchParams(project);
+      const projectUrl = utils.getWorkflowUrl(projectId, searchParams, project.workflow);
       return fetch(projectUrl, options);
     });
     const responses = await Promise.allSettled(requests);
