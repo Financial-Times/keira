@@ -3,13 +3,19 @@ type SearchParams = {
   "start-date": string;
 };
 
-type Project = {
+type ProjectConfig = {
+  channels: string[];
   branch?: string;
   workflow?: string;
-  channels: string[];
 };
 
-type ProjectMap = Record<string, Project>;
+type Project = ProjectConfig & {
+  id: string;
+  endpointUrl: string;
+  pipelineUrl: string;
+};
+
+type ProjectMap = Record<string, ProjectConfig>;
 
 type Item = {
   status: string;
