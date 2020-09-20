@@ -1,5 +1,3 @@
-const { DateTime } = require("luxon");
-
 const { GH_BRANCH_DEFAULT } = require("../config/constants.json");
 
 const endpointStem = "https://circleci.com/api/v2/insights/github/Financial-Times";
@@ -10,46 +8,38 @@ const pipelineStem = "https://app.circleci.com/pipelines/github/Financial-Times"
  *
  * @param {ProjectMap} projects
  */
-function injectConfig(projects) {
-  return Object.entries(projects).map(([id, project]) => {
-    const searchParams = getSearchParams(project.branch);
-    const endpointUrl = getEndpointUrl(id, searchParams, project.workflow);
-    const pipelineUrl = `${pipelineStem}/${id}`;
+function injectConfig(projects, startDate) {
+  const projectDefaults = {
+    workflow: "nightly",
+    branch: GH_BRANCH_DEFAULT
+  };
 
-    return {
-      id,
-      endpointUrl,
-      pipelineUrl,
-      ...project,
-    };
+  return Object.entries(projects).map(([id, project]) => {
+    project = { ...projectDefaults, ...project, id };
+    project.endpointUrl = getEndpointUrl(project, startDate);
+    project.pipelineUrl = `${pipelineStem}/${id}`;
+
+    return project;
   });
 }
 
 /**
  * Build the endpoint URL
  *
- * @param {string} projectId
- * @param {Record<string, string>} searchParams
- * @param {string} workflow
+ * @param {Project} project
  */
-function getEndpointUrl(projectId, searchParams = {}, workflow = "nightly") {
-  const url = new URL(`${endpointStem}/${projectId}/workflows/${workflow}`);
+function getEndpointUrl(project, startDate) {
+  const searchParams = {
+    branch: project.branch,
+    "start-date": startDate,
+  };
+  const url = new URL(`${endpointStem}/${project.id}/workflows/${project.workflow}`);
 
   for (const [k, v] of Object.entries(searchParams)) {
     url.searchParams.set(k, v);
   }
 
   return url.toString();
-}
-
-/**
- * Add query params to constrain results to branch and reporting period
- */
-function getSearchParams(branch = GH_BRANCH_DEFAULT) {
-  return {
-    branch,
-    "start-date": DateTime.local().minus({ weeks: 1 }).startOf("day").toISO(),
-  };
 }
 
 /**
@@ -66,7 +56,7 @@ function getMessageIcon(message) {
     excessive_failures: "💣",
     channel_not_found: "❌",
     not_in_channel: "❌",
-    unknown: "🤷‍♀️",
+    unknown_error: "🤷‍♀️",
   };
 
   return iconMap[message] || "🤔";
@@ -81,8 +71,8 @@ function getMessageIcon(message) {
 function getConfigError(errorId, channel) {
   /** @type Record<string, string> */
   const errorMap = {
-    channel_not_found: `@Keira needs to be invited to ${channel} to work`,
-    not_in_channel: `Config issue: ${channel} doesn't exist`,
+    channel_not_found: `run \`/invite @Keira\` in ${channel}`,
+    not_in_channel: `channel ${channel} doesn't exist`,
   };
 
   return errorMap[errorId];

@@ -1,5 +1,6 @@
 require("dotenv").config();
 require("promise.allsettled");
+const { DateTime } = require("luxon");
 const fetch = require("node-fetch");
 
 const utils = require("./utils");
@@ -9,12 +10,11 @@ const projects = require("../config/projects.json");
 const { ERROR_THRESHOLD } = require("../config/constants.json");
 
 const slackBot = createSlackBot(process.env.SLACK_TOKEN);
-
-const options = {
-  headers: {
-    "Circle-Token": process.env.CIRCLE_TOKEN,
-  },
+const requestOptions = {
+  headers: { "Circle-Token": process.env.CIRCLE_TOKEN },
 };
+const startDate = DateTime.local().minus({ weeks: 1 }).startOf("day");
+const readableDate = startDate.toLocaleString(DateTime.DATE_FULL);
 
 /**
  * Decide whether to send a Slack alert
@@ -29,7 +29,7 @@ async function processResponse(project, response) {
   const { message, items } = await response.json();
 
   // If `message` exists the repo has issues besides build failures
-  // Send a message notifying the channel
+  // Send a message notifying the channel that they should address this
   if (typeof message === "string") {
     return slackBot.notifyChannels(project, message);
   }
@@ -39,7 +39,7 @@ async function processResponse(project, response) {
   if (errorNum > ERROR_THRESHOLD) {
     return slackBot.notifyChannels(
       project,
-      `${errorNum} builds failed in the last week`,
+      `\`${project.workflow}\` failed ${errorNum} times since ${readableDate}`,
       "excessive_failures"
     );
   }
@@ -62,7 +62,7 @@ function handleNetworkError(error) {
  */
 async function getProjectBuildStatuses(projects) {
   try {
-    const requests = projects.map((project) => fetch(project.endpointUrl, options));
+    const requests = projects.map((project) => fetch(project.endpointUrl, requestOptions));
     const responses = await Promise.allSettled(requests);
 
     let index = 0;
@@ -76,4 +76,4 @@ async function getProjectBuildStatuses(projects) {
   }
 }
 
-getProjectBuildStatuses(utils.injectConfig(projects));
+getProjectBuildStatuses(utils.injectConfig(projects, startDate.toISO()));

@@ -4,15 +4,34 @@ const { SUPPORT_CHANNEL } = require("../config/constants.json");
 const utils = require("./utils");
 
 /**
- *
- * @param {string} token
+ * @param {Project} project
+ * @param {string} message
+ * @param {string} [messageType]
  */
-function createSlackBot(token) {
-  const client = new WebClient(token);
+function makeChannelText(project, message, messageType) {
+  const icon = utils.getMessageIcon(messageType || message);
+  return `${icon} *<${project.pipelineUrl}|${project.id}>*: ${message}`;
+}
+
+/**
+ * @param {Project} project
+ * @param {string} channel
+ * @param {string} message
+ */
+function makeSupportText(project, channel, message) {
+  return `:slack: cannot message ${channel} about ${project.id} - ${message}`;
+}
+
+/**
+ * @param {string} slackToken
+ * @returns SlackBot
+ */
+function createSlackBot(slackToken) {
+  const client = new WebClient(slackToken);
 
   /**
    * There was a problem sending the notification
-   * Message Keira's support channel so they can help fix the issue
+   * Message Keira's support channel so they can help the maintaining team fix the issue
    *
    * @param {{error: string}} slackResponse
    * @param {string} channel
@@ -23,23 +42,22 @@ function createSlackBot(token) {
     if (errorMsg) {
       return client.chat.postMessage({
         channel: SUPPORT_CHANNEL,
-        text: `${utils.getMessageIcon(error)} ${errorMsg}, project.id`,
+        text: makeSupportText(project, channel, errorMsg, error),
       });
     }
 
-    /**
-     * If this is an error we don't yet handle we should add a case to util.sgetConfigError
-     */
+    // If errorMsg === undefined then this is a type of error we haven't seen before
+    // We should add a case to utils.getConfigError to handle it
     return client.chat.postMessage({
       channel: SUPPORT_CHANNEL,
-      text: `${utils.getMessageIcon("unknown")} Seeing a new error: "${error}"`,
+      text: makeSupportText(project, channel, `Seeing a new error: "${error}"`),
     });
   }
 
   /**
    * Send a Slack message to each channel
    *
-   * @param {Project}  project   e.g. ['ads-tech-rota']
+   * @param {Project}  project
    * @param {string}   message   e.g. 'Rate Limit Exceeded', 'Project not found', etc
    * @param {string}   [messageType]
    */
@@ -47,20 +65,23 @@ function createSlackBot(token) {
     try {
       const notifications = [];
       for (const channel of project.channels) {
-        const icon = utils.getMessageIcon(messageType || message);
-        const text = `${icon} *<${project.pipelineUrl}|${project.id}>*: ${message}`;
-        notifications.push(client.chat.postMessage({ channel, text }));
+        notifications.push(
+          client.chat.postMessage({ channel, text: makeChannelText(project, message, messageType) })
+        );
       }
 
       // Verify that the messages were correctly sent
       const responses = await Promise.allSettled(notifications);
       let channelIndex = 0;
+      const supportMessages = [];
       for (const response of responses) {
         const channel = project.channels[channelIndex++];
         if (response.status === "rejected") {
-          notifySupport(response.reason.data, channel, project);
+          supportMessages.push(notifySupport(response.reason.data, channel, project));
         }
       }
+
+      return Promise.allSettled(supportMessages);
     } catch (err) {
       console.log(err);
     }

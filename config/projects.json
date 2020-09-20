@@ -1,11 +1,8 @@
 {
   "next-consent-proxy": {
-    "channels": ["#ads-tech-rota", "#team-next-ops-cops", "#foo"]
+    "channels": ["#keira-playground"]
   },
   "next-ads-api": {
-    "channels": ["#ads-tech-rota"]
-  },
-  "n-ads-api": {
     "channels": ["#ads-tech-rota"]
   },
   "n-syndication": {

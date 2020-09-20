@@ -30,3 +30,16 @@ type ResultErr = {
 };
 
 type Result = ResultData | ResultErr;
+
+type SlackBot = {
+  notifySupport: (
+    { error }: { error: string },
+    channel: string,
+    project: Project
+  ) => Promise<WebAPICallResult>;
+  notifyChannels: (
+    project: Project,
+    message: string,
+    messageType?: string | undefined
+  ) => Promise<unknown>;
+};
