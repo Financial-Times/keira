@@ -6,6 +6,7 @@ const { endpointStem, pipelineStem } = require("../utils");
 const constants = require("../../config/constants.json");
 
 describe("index", () => {
+  /** @type SlackBot */
   let slackBot;
   let client;
   const mockSlackErrorResponse = (errorId) => ({
@@ -13,6 +14,9 @@ describe("index", () => {
       error: errorId,
     },
   });
+
+  const date = DateTime.local().minus({ weeks: 1 }).startOf("day").toISO();
+  const dateEncoded = encodeURIComponent(date);
 
   beforeEach(() => {
     WebClient.mockClear();
@@ -22,48 +26,106 @@ describe("index", () => {
   });
 
   describe("notifySupport", () => {
+    const project = {
+      id: "mock-project",
+      channels: ["#ads-tech-rota", "#keira-playground", "#foo"],
+      branch: "development",
+      workflow: "nightly",
+      endpointUrl: `${endpointStem}/mock-project/workflows/build-test-provision?branch=development&start-date=${dateEncoded}`,
+      pipelineUrl: `${pipelineStem}/mock-project`,
+      startDate: date,
+    };
+
     it("Handles known errors", () => {
-      slackBot.notifySupport({ error: "channel_not_found" }, "#TEST");
+      slackBot.notifySupport({ error: "channel_not_found" }, "#TEST", project);
       expect(client.chat.postMessage).toHaveBeenCalledWith({
         channel: constants.SUPPORT_CHANNEL,
-        text: "❌ @Keira needs to be invited to #TEST to work",
+        text:
+          ":slack: cannot message #TEST about mock-project - run `/invite @Keira` in #TEST",
       });
     });
 
     it("Handles unknown errors", () => {
-      slackBot.notifySupport({ error: "MOCK_ERROR" }, "#TEST");
+      slackBot.notifySupport({ error: "MOCK_ERROR" }, "#TEST", project);
       expect(client.chat.postMessage).toHaveBeenCalledWith({
         channel: constants.SUPPORT_CHANNEL,
-        text: '🤷‍♀️ Seeing a new error: "MOCK_ERROR"',
+        text: ':slack: cannot message #TEST about mock-project - Seeing a new error: "MOCK_ERROR"',
       });
     });
   });
 
   describe("notifyChannels", () => {
-    const date = encodeURIComponent(DateTime.local().minus({ weeks: 1 }).startOf("day").toISO());
     const project = {
       id: "mock-project",
-      channels: ["#ads-tech-rota", "#keira-playground", "#foo"],
+      channels: ["#channel1", "#channel2"],
       branch: "development",
       workflow: "build-test-provision",
-      endpointUrl: `${endpointStem}/n-syndication/workflows/build-test-provision?branch=development&start-date=${date}`,
-      pipelineUrl: `${pipelineStem}/n-syndication`,
+      endpointUrl: `${endpointStem}/mock-project/workflows/build-test-provision?branch=development&start-date=${dateEncoded}`,
+      pipelineUrl: `${pipelineStem}/mock-project`,
+      startDate: date,
     };
 
-    it("notifies once per channel", async () => {
-      await slackBot.notifyChannels(project, "mock message", "mock_message_type");
-      expect(client.chat.postMessage).toHaveBeenCalledTimes(3);
+    it("notifies each channel", async () => {
+      await slackBot.notifyChannels(
+        project,
+        "`build-test-provision` failed 5 times in the last week",
+        "excessive_failures"
+      );
+      expect(client.chat.postMessage.mock.calls).toEqual([
+        [
+          {
+            channel: "#channel1",
+            text:
+              "💣 *<https://app.circleci.com/pipelines/github/Financial-Times/mock-project|mock-project>*: `build-test-provision` failed 5 times in the last week",
+          },
+        ],
+        [
+          {
+            channel: "#channel2",
+            text:
+              "💣 *<https://app.circleci.com/pipelines/github/Financial-Times/mock-project|mock-project>*: `build-test-provision` failed 5 times in the last week",
+          },
+        ],
+      ]);
     });
 
     it("notifies support in case of failure to post to Slack", async () => {
-      project.channels = ["#ads-tech-rota"]
       const mockError = "channel_not_found";
       client.chat.postMessage = jest.fn(() => Promise.reject(mockSlackErrorResponse(mockError)));
 
       await slackBot.notifyChannels(project, mockError);
 
       // Expect 2 calls per channel: once to try the channel, once to ping support
-      expect(client.chat.postMessage).toHaveBeenCalledTimes(2);
+      expect(client.chat.postMessage.mock.calls).toEqual([
+        [
+          {
+            channel: "#channel1",
+            text:
+              "❌ *<https://app.circleci.com/pipelines/github/Financial-Times/mock-project|mock-project>*: channel_not_found",
+          },
+        ],
+        [
+          {
+            channel: "#channel2",
+            text:
+              "❌ *<https://app.circleci.com/pipelines/github/Financial-Times/mock-project|mock-project>*: channel_not_found",
+          },
+        ],
+        [
+          {
+            channel: "#keira-playground",
+            text:
+              ":slack: cannot message #channel1 about mock-project - run `/invite @Keira` in #channel1",
+          },
+        ],
+        [
+          {
+            channel: "#keira-playground",
+            text:
+              ":slack: cannot message #channel2 about mock-project - run `/invite @Keira` in #channel2",
+          },
+        ],
+      ]);
     });
   });
 });
