@@ -28,6 +28,8 @@ In the case of failure to send the Slack message, the support channel (currently
 
 Run `node src/index` to trigger a report.
 
+
+
 ## Configuration
 Projects to be checked are listed in `config/projects.json`.
 
@@ -51,8 +53,10 @@ More options are available:
 }
 ```
 
-## Immediate priorities
+## Roadmap
 - [x] Add .env keys to LastPass
 - [ ] Automate running Keira weekly. Sam Parkinson has suggested using a Circle CI job 
 - [ ] Add logging
 - [ ] More test coverage
+- [ ] Create a "sandbox mode" to avoid spamming channels during development
+- [ ] Add more projects
